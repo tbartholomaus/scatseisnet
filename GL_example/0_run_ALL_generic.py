@@ -10,6 +10,7 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
+from datetime import timedelta
 
 from obspy.clients.fdsn import Client
 from obspy.core import UTCDateTime
@@ -154,18 +155,23 @@ parameters_to_test = [
     # [5,np.average,    4,4,1,   5,2,3,   10, 3], # not useful; too few clusters
     # # averaging doesn't seem to get icequake clusters as well
     
+    [5,np.max,    4,4,1,   6,2,3,   10, 10], # 18
+
+    
     #segm,pooli      l1       l2      clustering
+    
+    
     
 ]
 
 
 # %% 
-saving = False
-saving_figs = False
+saving = True
+saving_figs = True
 ##### Loop over tests of different filterbanks and clustering parameters
-for testN, params in enumerate(parameters_to_test[:1]):
+for testN, params in enumerate(parameters_to_test):
     print(testN)
-    if testN >= 0: # For starting at a later test if you need
+    if testN == 18:# >= 0: # For starting at a later test if you need
         ## %%
         ##### Pull out variables from list
         segment_duration_seconds = params[0]
@@ -240,7 +246,7 @@ for testN, params in enumerate(parameters_to_test[:1]):
 
             fig.suptitle(f"test {testN}\nlayer {ii}, seg dur: {segment_duration_seconds}, sps: {sampling_rate_hertz}")
             if saving_figs:
-                filepath_save = os.path.join(dirpath_savefigs, f"GL_scattering_network_{testN}.png")
+                filepath_save = os.path.join(dirpath_savefigs, f"GL_scattering_network_layer_{ii}_{testN}.png")
                 fig.savefig(filepath_save, dpi=300)
 
                 
@@ -378,73 +384,6 @@ for testN, params in enumerate(parameters_to_test[:1]):
         # Predict cluster for each sample
         predictions = model.predict(features)
 
-        # %% 
-        ##### Cluster-wise detection rate
-        SMOOTH_KERNEL = 20
-
-        # Convert predictions to one-hot encoding
-        one_hot = np.zeros((len(times[:-1]), N_CLUSTERS + 1))
-        one_hot[np.arange(len(times[:-1])), predictions] = 1
-
-        # Plot the results
-        gs = gridspec.GridSpec(5,1)
-        # fig, ax = plt.subplots(figsize=(6, 6))
-        fig = plt.figure()
-        ax = fig.add_subplot(gs[:, :])
-
-        # Plot each cluster as a separate line
-        # times_tmp = [UTCDateTime(t).datetime for t in times] # same format as times below
-        for i in range(N_CLUSTERS):
-
-            # Obtain the detection rate by convolving with a boxcar kernel
-            detection_rate = np.convolve(one_hot[:, i], np.ones(SMOOTH_KERNEL), mode="same") / SMOOTH_KERNEL
-
-            # Plot the detection rate
-            ax.plot(times[:-1], one_hot[:, i] + i, alpha=0.5)
-            ax.plot(times[:-1], detection_rate + i, color="black")
-        ax.set_xlim([tstart,tstop])
-
-        # Labels
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Cluster index")
-        fig.suptitle(f"test {testN}\nseg dur: {segment_duration_seconds}, sps: {sampling_rate_hertz}, n_ICA_comp: {n_ICA_components}")
-
-        # ### Plot sta/lta detection rate
-        # # fig, ax = plt.subplots(figsize=(6, 6))
-        # ax = fig.add_subplot(gs[5,:])
-        # ax.bar(bin_centers_dt, hist_stalta, width=timedelta(seconds=bin_width), color='k')
-        # ax.set_xlabel("Time")
-        # ax.set_ylabel("# sta/lta\detecs")
-        # ax.set_xlim([tstart,tstop])
-
-        # ### Plot repeater detection rate, if more than 3/hr
-        # ax = fig.add_subplot(gs[6,:])
-        # many_colors = [key for key in matplotlib.colors.CSS4_COLORS.keys()]
-        # # many_colors = many_colors[::2]
-        # for ix_fam, name in enumerate(corr_detecs.template_id.unique()):
-        #     mask = corr_detecs.template_id == name
-        #     df_tmp = corr_detecs[mask]
-        #     if len(df_tmp) > 3:
-        #         # print(name, len(df_tmp)) 
-        #         detec_times = [UTCDateTime(t) for t in pd.to_datetime(df_tmp.detec_time_dt, utc=True)] 
-        #         amps = df_tmp.maxamp_anychan.values
-        #         for ix_detec, t in enumerate(detec_times):
-        #             x = [t,t,]
-        #             y = [0,np.log10(amps[ix_detec])]
-        #             ax.plot(x,y,'-', linewidth=0.5, color=many_colors[ix_fam])
-        #             ax.plot(x[1],np.log10(amps[ix_detec]),'*', color=many_colors[ix_fam])
-        # ax.set_ylim(1.45, 2.75)
-        # ax.set_ylabel("log10 maxamp")
-        ax.set_xlabel("Time")
-        ax.set_xlim([tstart,tstop])
-
-        # plt.show()
-
-        if saving_figs:
-            filepath_save = os.path.join(dirpath_savefigs, f"GL_clusters_{n_ICA_components}_{N_CLUSTERS}_{testN}.png")
-            fig.savefig(filepath_save, dpi=300)
-
-
 
 
         # %%
@@ -482,8 +421,108 @@ for testN, params in enumerate(parameters_to_test[:1]):
                 traces.append(trace)
             waveforms.append(traces)
 
+
+
+        # %% 
+        ##### Cluster-wise detection rate
+        SMOOTH_KERNEL = 20
+        nwav = 3
+        
+        # Convert predictions to one-hot encoding
+        one_hot = np.zeros((len(times[:-1]), N_CLUSTERS + 1))
+        one_hot[np.arange(len(times[:-1])), predictions] = 1
+
+        # Plot the results
+        gs = gridspec.GridSpec(N_CLUSTERS,3)
+        # gs = gridspec.GridSpec(5,1)
+        # fig, ax = plt.subplots(figsize=(6, 6))
+        fig = plt.figure(figsize=[11,8.5])
+        # ax = fig.add_subplot(gs[:, :])
+
+        # Plot each cluster as a separate line
+        # times_tmp = [UTCDateTime(t).datetime for t in times] # same format as times below
+        axs_left = []
+        axs_right = []
+        for i in range(N_CLUSTERS):
+            ax = fig.add_subplot(gs[i,:2])
+            # Obtain the detection rate by convolving with a boxcar kernel
+            detection_rate = np.convolve(one_hot[:, i], np.ones(SMOOTH_KERNEL), mode="same") / SMOOTH_KERNEL
+
+            # Plot the detection rate
+            ax.plot(times[:-1], one_hot[:, i], alpha=0.5)
+            # ax.bar(times[:-1], one_hot[:, i], width=timedelta(seconds=segment_duration/2), alpha=0.5) # BAR only makes sense really if overlap = 0, otherwise the bars overlap; to hack it anyway, use segment_duration/2
+            # also bar is VERY slow
+            ax.plot(times[:-1], detection_rate, color="black")
+            ax.set_yticklabels('')
+            ax.set_yticks([])
+            ax.set_ylim(0,1)
+            ax.set_xlim([tstart,tstop])
+            ax.set_ylabel(i, rotation=0)
+            if i < N_CLUSTERS-1:
+                ax.set_xticklabels('')
+            axs_left += [ax]
+            
+            # plot the waveform
+            ax = fig.add_subplot(gs[i,2:])
+            for jj in range(nwav):
+                wavs_tmp = waveforms[i]
+                wav = wavs_tmp[jj]
+                tplot = wav.times()
+                dat = wav.data/np.max(np.abs(wav.data))
+                ax.plot(tplot, dat-jj, linewidth=0.7)
+            # ax.yaxis.tick_right()
+            ax.set_yticklabels('')
+            ax.set_xlim([tplot[0], tplot[-1]])
+            if i < N_CLUSTERS-1:
+                ax.set_xticklabels('')
+            elif i == N_CLUSTERS-1:
+                ax.set_xlabel('Seconds')
+            axs_right += [ax]
+
+        plt.subplots_adjust(wspace=0.1, hspace=0)
+        # Labels
+        
+        # axs[int(np.floor(N_CLUSTERS/2))].set_ylabel("Cluster index")
+        # axs[-1].set_xlabel("Time")
+        fig.suptitle(f"test {testN}\nseg dur: {segment_duration_seconds}, sps: {sampling_rate_hertz}, n_ICA_comp: {n_ICA_components}")
+
+        # ### Plot sta/lta detection rate << no longer works with plot that shows waveforms
+        # # fig, ax = plt.subplots(figsize=(6, 6))
+        # ax = fig.add_subplot(gs[5,:])
+        # ax.bar(bin_centers_dt, hist_stalta, width=timedelta(seconds=bin_width), color='k')
+        # ax.set_xlabel("Time")
+        # ax.set_ylabel("# sta/lta\detecs")
+        # ax.set_xlim([tstart,tstop])
+
+        # ### Plot repeater detection rate, if more than 3/hr
+        # ax = fig.add_subplot(gs[6,:])
+        # many_colors = [key for key in matplotlib.colors.CSS4_COLORS.keys()]
+        # # many_colors = many_colors[::2]
+        # for ix_fam, name in enumerate(corr_detecs.template_id.unique()):
+        #     mask = corr_detecs.template_id == name
+        #     df_tmp = corr_detecs[mask]
+        #     if len(df_tmp) > 3:
+        #         # print(name, len(df_tmp)) 
+        #         detec_times = [UTCDateTime(t) for t in pd.to_datetime(df_tmp.detec_time_dt, utc=True)] 
+        #         amps = df_tmp.maxamp_anychan.values
+        #         for ix_detec, t in enumerate(detec_times):
+        #             x = [t,t,]
+        #             y = [0,np.log10(amps[ix_detec])]
+        #             ax.plot(x,y,'-', linewidth=0.5, color=many_colors[ix_fam])
+        #             ax.plot(x[1],np.log10(amps[ix_detec]),'*', color=many_colors[ix_fam])
+        # ax.set_ylim(1.45, 2.75)
+        # ax.set_ylabel("log10 maxamp")
+        # ax.set_xlabel("Time")
+        # ax.set_xlim([tstart,tstop])
+
+        # plt.show()
+
+        if saving_figs:
+            filepath_save = os.path.join(dirpath_savefigs, f"GL_clusters_{n_ICA_components}_{N_CLUSTERS}_{testN}.png")
+            fig.savefig(filepath_save, dpi=300)
+
         # %%
-        ##### Sort of useful summary plot
+        ##### Sort of useful waveform summary plot
         # Plot the results
         fig, ax = plt.subplots(N_WAVEFORMS, N_CLUSTERS, sharex=True, sharey=True)
         # Plot each cluster as a separate line
